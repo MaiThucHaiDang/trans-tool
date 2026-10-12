@@ -77,8 +77,10 @@ def _join_lines(lines) -> str:
         top, bottom, _ = _line_box(line)
         height = max(bottom - top, 1.0)
         gap = None if prev_bottom is None else top - prev_bottom
+        # Dòng sau bắt đầu bằng chữ thường gần như chắc chắn là câu chưa hết.
+        continues = text[0].islower() or gap is not None and gap < height * 0.9
         if (paragraphs and not paragraphs[-1].endswith(SENTENCE_END)
-                and gap is not None and gap < height * 0.9):
+                and gap is not None and gap < height * 3 and continues):
             paragraphs[-1] += " " + text
         else:
             paragraphs.append(text)
