@@ -1,0 +1,14 @@
+VSVersionInfo(
+  ffi=FixedFileInfo(filevers=(1, 0, 0, 0), prodvers=(1, 0, 0, 0)),
+  kids=[
+    StringFileInfo([StringTable('040904B0', [
+      StringStruct('CompanyName', 'MaiThucHaiDang'),
+      StringStruct('FileDescription', 'Dịch - dịch nhanh sang tiếng Việt'),
+      StringStruct('FileVersion', '1.0.0'),
+      StringStruct('ProductName', 'Dịch'),
+      StringStruct('ProductVersion', '1.0.0'),
+      StringStruct('OriginalFilename', 'Dich.exe'),
+    ])]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
