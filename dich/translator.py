@@ -11,8 +11,15 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 
-ENDPOINT = "https://translate.googleapis.com/translate_a/single"
+# Các cặp (địa chỉ, client) cùng trả về một định dạng. Google thỉnh thoảng
+# chặn tạm một cặp (lỗi 429), khi đó thử cặp kế tiếp.
+ENDPOINTS = [
+    ("https://translate.googleapis.com/translate_a/single", "dict-chrome-ex"),
+    ("https://clients5.google.com/translate_a/single", "dict-chrome-ex"),
+    ("https://translate.googleapis.com/translate_a/single", "gtx"),
+]
 TIMEOUT = 10  # giây
+_preferred = 0  # cặp chạy được gần nhất, lần sau thử trước
 
 # Tên tiếng Việt của các ngôn ngữ hay gặp; mã lạ thì hiện nguyên mã.
 LANGUAGE_NAMES = {
@@ -58,29 +65,40 @@ class Translation:
     dictionary: list[DictEntry] = field(default_factory=list)
 
 
-def _request(text: str, source: str, target: str) -> list:
-    params = [("client", "gtx"), ("sl", source), ("tl", target),
+def _request_once(endpoint: str, client: str, text: str, source: str, target: str) -> list:
+    params = [("client", client), ("sl", source), ("tl", target),
               ("dt", "t"), ("dt", "bd")]
-    url = ENDPOINT + "?" + urllib.parse.urlencode(params)
+    url = endpoint + "?" + urllib.parse.urlencode(params)
     # Gửi văn bản trong body (POST) để không bị giới hạn độ dài URL.
     body = urllib.parse.urlencode({"q": text}).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers={
         "User-Agent": "Mozilla/5.0",
         "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
     })
-    try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        if e.code == 429:
-            raise TranslateError("Dịch quá nhiều trong thời gian ngắn, "
-                                 "vui lòng đợi một lát rồi thử lại.") from e
-        raise TranslateError(f"Máy chủ dịch báo lỗi ({e.code}).") from e
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise TranslateError("Không kết nối được máy chủ dịch. "
-                             "Vui lòng kiểm tra kết nối mạng.") from e
-    except ValueError as e:
-        raise TranslateError("Máy chủ dịch trả về dữ liệu lạ.") from e
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _request(text: str, source: str, target: str) -> list:
+    global _preferred
+    order = ENDPOINTS[_preferred:] + ENDPOINTS[:_preferred]
+    last_error = None
+    for endpoint, client in order:
+        try:
+            data = _request_once(endpoint, client, text, source, target)
+            _preferred = ENDPOINTS.index((endpoint, client))
+            return data
+        except urllib.error.HTTPError as e:
+            last_error = e
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            raise TranslateError("Không kết nối được máy chủ dịch. "
+                                 "Vui lòng kiểm tra kết nối mạng.") from e
+        except ValueError as e:
+            last_error = e
+    if isinstance(last_error, urllib.error.HTTPError) and last_error.code == 429:
+        raise TranslateError("Máy chủ dịch đang bận (dịch quá nhiều trong thời gian ngắn). "
+                             "Vui lòng đợi vài phút rồi thử lại.") from last_error
+    raise TranslateError("Máy chủ dịch đang gặp lỗi, vui lòng thử lại sau.") from last_error
 
 
 def _parse(data: list, text: str, target: str) -> Translation:
