@@ -70,8 +70,12 @@ class HistoryDialog(QDialog):
             self.accept()
 
     def _clear(self):
-        if QMessageBox.question(self, "Xóa lịch sử", "Xóa toàn bộ lịch sử tra cứu?") \
-                == QMessageBox.StandardButton.Yes:
+        box = QMessageBox(QMessageBox.Icon.Question, "Xóa lịch sử",
+                          "Xóa toàn bộ lịch sử tra cứu?", parent=self)
+        yes = box.addButton("Xóa", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Không", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is yes:
             self.history.clear()
             self.list.clear()
             self.list.addItem("(Chưa có lượt tra nào)")
