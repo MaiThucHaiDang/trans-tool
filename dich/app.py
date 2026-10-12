@@ -18,6 +18,7 @@ from .main_window import MainWindow
 
 SERVER_NAME = f"Dich-{getpass.getuser()}"
 CAPTURE_ARG = "--chup"  # mở thẳng chế độ chọn vùng
+SELFTEST_ARG = "--kiem-tra"  # tự kiểm tra OCR + dịch, ghi kết quả ra file
 
 # Phím tắt toàn cục Ctrl+Alt+Q để chọn vùng (dành cho ai quen bàn phím).
 HOTKEY_ID = 0xD1C
@@ -185,8 +186,8 @@ class DichApp:
         if self.settings.get("first_run_done"):
             return
         self.settings.set("first_run_done", True)
-        cfg.set_autostart(True)
-        if cfg.is_frozen():
+        if not cfg.installed_by_setup():  # bản giải nén (portable) thì tự lo
+            cfg.set_autostart(True)
             cfg.create_shortcuts()
         QMessageBox.information(
             self.window, "Chào mừng đến với Dịch",
@@ -235,9 +236,44 @@ def _send_to_running(command: str) -> bool:
     return True
 
 
+def self_test() -> int:
+    """Vẽ một dòng chữ, nhận diện rồi dịch; ghi kết quả vào selftest.txt.
+
+    Dùng để kiểm tra nhanh trên máy mới:  Dich.exe --kiem-tra
+    """
+    from PySide6.QtGui import QColor, QFont, QPainter
+
+    from . import ocr, translator
+    lines = []
+    code = 1
+    try:
+        img = QImage(700, 120, QImage.Format.Format_ARGB32)
+        img.fill(QColor("white"))
+        p = QPainter(img)
+        p.setFont(QFont("Segoe UI", 16))
+        p.setPen(QColor("black"))
+        p.drawText(10, 50, "Please enter your password to continue.")
+        p.end()
+        lines.append("OCR languages: " + ", ".join(
+            l.language_tag for l in ocr.OcrEngine.available_recognizer_languages))
+        text = tasks.recognize(img)
+        lines.append("OCR: " + text)
+        tr = translator.translate(text)
+        lines.append(f"Translate ({tr.source_lang} -> {tr.target_lang}): {tr.text}")
+        lines.append("OK")
+        code = 0
+    except Exception as e:
+        lines.append(f"ERROR: {type(e).__name__}: {e}")
+    cfg.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    (cfg.DATA_DIR / "selftest.txt").write_text("\n".join(lines), encoding="utf-8")
+    return code
+
+
 def main() -> int:
     args = sys.argv[1:]
     app = QApplication(sys.argv)
+    if SELFTEST_ARG in args:
+        return self_test()
     app.setApplicationName(cfg.APP_ID)
     app.setApplicationDisplayName(cfg.APP_NAME)
 
