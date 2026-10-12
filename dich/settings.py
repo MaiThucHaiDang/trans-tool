@@ -95,6 +95,11 @@ def is_frozen() -> bool:
     return getattr(sys, "frozen", False)
 
 
+def installed_by_setup() -> bool:
+    """Đã cài bằng Dich-Setup.exe (bộ cài tự lo shortcut và tự chạy)."""
+    return is_frozen() and (Path(sys.executable).parent / "unins000.exe").exists()
+
+
 def _launch_command(*args: str) -> str:
     if is_frozen():
         parts = [sys.executable, *args]
@@ -132,31 +137,17 @@ def create_shortcuts() -> bool:
     """
     if not is_frozen():
         return False
-    exe = sys.executable
-    targets = [
-        Path(os.environ.get("USERPROFILE", Path.home())) / "Desktop",
-        Path(os.environ.get("APPDATA", "")) / r"Microsoft\Windows\Start Menu\Programs",
-    ]
+    # QFile.link tạo file .lnk thật trên Windows và hỗ trợ đường dẫn có dấu
+    # (WScript.Shell thì không).
+    from PySide6.QtCore import QFile, QStandardPaths
     ok = False
-    for folder in targets:
-        if not folder.is_dir():
+    for location in (QStandardPaths.StandardLocation.DesktopLocation,
+                     QStandardPaths.StandardLocation.ApplicationsLocation):
+        folder = QStandardPaths.writableLocation(location)
+        if not folder or not Path(folder).is_dir():
             continue
-        lnk = folder / f"{APP_NAME}.lnk"
-        script = (
-            "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:DICH_LNK);"
-            "$s.TargetPath=$env:DICH_EXE;"
-            "$s.WorkingDirectory=(Split-Path $env:DICH_EXE);"
-            "$s.IconLocation=$env:DICH_EXE+',0';"
-            "$s.Description='Dịch nhanh tiếng Anh sang tiếng Việt';"
-            "$s.Save()"
-        )
-        env = {**os.environ, "DICH_LNK": str(lnk), "DICH_EXE": exe}
-        try:
-            subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                env=env, timeout=15, check=True,
-                creationflags=subprocess.CREATE_NO_WINDOW)
-            ok = True
-        except (OSError, subprocess.SubprocessError):
-            pass
+        lnk = Path(folder) / f"{APP_NAME}.lnk"
+        if lnk.exists():
+            lnk.unlink(missing_ok=True)
+        ok = QFile.link(sys.executable, str(lnk)) or ok
     return ok
